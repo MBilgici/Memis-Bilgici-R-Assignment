@@ -1,6 +1,6 @@
 # Memis-Bilgici-R-Assignment
  Memis Bilgici R assignment is consist of three parts:
-1. Replicating your UNIX assignment in R
+1. Replicating my UNIX assignment in R
 2. Additional analysis and visualization
 3. Reviewing two assignments from my peers (aksharar@iastate.edu and chram@iastate.edu)
 Memis Bilgici R Assignment Overview
