@@ -1,0 +1,149 @@
+Libraries
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(gridExtra)
+
+
+# File Paths
+genotype_file <- "C:/Users/bilgici/Desktop/New Folder/fang_et_al_genotypes.txt"
+snp_file      <- "C:/Users/bilgici/Desktop/New Folder/snp_position.txt"
+
+# Read SNP and Genotype Data
+snp_data <- read.table(snp_file, header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+geno <- read.table(genotype_file, header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+
+# Inspect Structure and Dimensions
+print("SNP Data Structure:")
+str(snp_data)
+dim(snp_data)
+
+print("Genotype Data Structure:")
+str(geno)
+dim(geno)
+
+
+# Replace NA with '?' for maize files
+geno[is.na(geno)] <- "?"
+
+# Create a second copy for teosinte files, replacing '?' with '-'
+geno_dash <- geno
+geno_dash[geno_dash == "?"] <- "-"
+
+
+
+# Define function to create and save files
+save_snp_files <- function(df, group_name) {
+  lapply(unique(df$Chromosome), function(chr) {
+    chr_data <- df[df$Chromosome == chr, ]
+    
+    # Sort Ascending
+    chr_data_asc <- chr_data[order(chr_data$Position), ]
+    write.table(chr_data_asc, file = paste0(group_name, "_Chr", chr, "_asc.txt"), 
+                sep = "\t", quote = FALSE, row.names = FALSE)
+    
+    # Sort Descending
+    chr_data_desc <- chr_data[order(chr_data$Position, decreasing = TRUE), ]
+    write.table(chr_data_desc, file = paste0(group_name, "_Chr", chr, "_desc.txt"), 
+                sep = "\t", quote = FALSE, row.names = FALSE)
+  })
+}
+
+# Save Files for Maize and Teosinte
+save_snp_files(geno, "maize")       # '?' encoding
+save_snp_files(geno_dash, "teosinte") # '-' encoding
+
+
+
+
+# Ensure Chromosome is numeric for sorting
+snp_counts <- snp_data %>%
+  filter(!is.na(Chromosome) & Chromosome != "") %>%
+  mutate(Chromosome = as.numeric(Chromosome)) %>%
+  group_by(Chromosome) %>%
+  summarise(Count = n()) %>%
+  mutate(Chromosome = as.character(Chromosome)) %>%
+  arrange(as.numeric(Chromosome))
+
+# Visualization: SNP Count per Chromosome
+p1 <- ggplot(snp_counts, aes(x = factor(Chromosome, levels = as.character(1:10)), y = Count)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  labs(title = "SNP Count per Chromosome",
+       x = "Chromosome",
+       y = "Number of SNPs") +
+  theme_minimal()
+
+print(p1)
+
+
+# Define groups
+maize_groups <- c('ZMMIL', 'ZMMLR', 'ZMMMR')
+teosinte_groups <- c('ZMPBA', 'ZMPIL', 'ZMPJA')
+
+# Create duplicate SNP counts for visualization
+snp_by_type <- data.frame(
+  Chromosome = rep(snp_counts$Chromosome, 2),
+  Type = rep(c("maize", "teosinte"), each = nrow(snp_counts)),
+  Count = rep(snp_counts$Count, 2)
+)
+
+# Visualization: SNP Count per Chromosome by Type
+p2 <- ggplot(snp_by_type, aes(x = factor(Chromosome, levels = as.character(1:10)), 
+                              y = Count, fill = Type)) +
+  geom_bar(stat = "identity", position = position_dodge()) +
+  labs(title = "SNP Count per Chromosome by Type",
+       x = "Chromosome",
+       y = "Number of SNPs") +
+  scale_fill_manual(values = c("maize" = "cornflowerblue", "teosinte" = "coral")) +
+  theme_minimal()
+
+print(p2)
+
+
+# Reshape Data
+geno_long <- geno %>%
+  pivot_longer(cols = -c(Sample_ID, Group), names_to = "SNP_ID", values_to = "Genotype")
+
+# Categorize Genotype
+categorize_genotype <- function(gt) {
+  if (gt == "?/?") {
+    return("Missing")
+  } else if (grepl("^([ACGT])/\\1$", gt)) {
+    return("Homozygous")
+  } else {
+    return("Heterozygous")
+  }
+}
+
+geno_long$Category <- sapply(geno_long$Genotype, categorize_genotype)
+
+# Calculate Counts per Sample & Category
+sample_summary <- geno_long %>%
+  group_by(Sample_ID, Group, Category) %>%
+  summarise(Count = n(), .groups = "drop") %>%
+  group_by(Sample_ID, Group) %>%
+  mutate(Total = sum(Count), Proportion = Count / Total) %>%
+  ungroup()
+
+# Visualization: Genotype Proportions per Sample
+p_sample <- ggplot(sample_summary, aes(x = Sample_ID, y = Proportion, fill = Category)) +
+  geom_bar(stat = "identity", position = "fill") +
+  labs(title = "Genotype Categories: Proportions per Sample",
+       x = "Sample ID", y = "Proportion") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+print(p_sample)
+
+
+allele_freq <- geno_long %>%
+  filter(Category != "Missing") %>%
+  count(SNP_ID, Category) %>%
+  mutate(Frequency = n / sum(n))
+
+p_allele <- ggplot(allele_freq, aes(x = Frequency, fill = Category)) +
+  geom_histogram(bins = 30, alpha = 0.7, position = "identity") +
+  labs(title = "Allele Frequency Distribution", x = "Frequency", y = "Count") +
+  theme_minimal()
+
+print(p_allele)
